@@ -37,20 +37,24 @@ let gMessage1 = null;               // 表示メッセージ1
 let gMessage2 = null;               // 表示メッセージ2
 let gMoveX = 0;                     // 移動量X
 let gMoveY = 0;                     // 移動量Y
+let gImgBoss;                       // 魔王の画像
 let gImgMap;                        // マップの画像
-let gImgMonster;                        // モンスターの画像
+let gImgMonster;                    // モンスターの画像
 let gImgPlayer;                     // プレイヤーの画像
 let gItem = 0;                      // 所持アイテム
-let gPhase = 0;                         // 戦闘フェーズ
+let gPhase = 0;                     // 戦闘フェーズ
 let gPlayerX = START_X * TILESIZE + TILESIZE / 2;  // プレイヤー座標X
 let gPlayerY = START_Y * TILESIZE + TILESIZE / 2;  // プレイヤー座標Y
 let gScreen;                        // 仮想画面
 
+const gFileBoss = "img/boss.png";
 const gFileMap = "img/map.png";
 const gFileMonster = "img/monster.png";
 const gFilePlayer = "img/player.png";
 
 const gEncounter = [0, 0, 0, 1, 0, 0, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0,]; // 敵エンカウント確率
+
+const gMonsterName = ["スライム", "うさぎ", "ナイト", "ドラゴン", "魔王"]; // モンスター名称
 
 // マップ
 const	gMap = [
@@ -88,14 +92,70 @@ const	gMap = [
  7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 7, 7, 7, 7, 7,
 ];
 
+// 戦闘行動処理
+function Action(){
+  gPhase++;                                 // フェーズ経過
+
+	if( gPhase == 3 ){
+		SetMessage( gMonsterName[ gEnemyType ] + "の攻撃！", 999 + " のダメージ！" );
+    // gPhase = 7;
+		return;
+	}
+
+  if (gCursor == 0){                        // 「戦う」選択時
+    SetMessage("あなたの攻撃！", 333 + "　のダメージ！");
+    gPhase = 5;
+    return;
+  }
+
+  if (Math.random() < 0.5){                 // 「逃げる」成功時
+    SetMessage("あなたは逃げ出した", null);
+    gPhase = 6;
+    return;
+  }
+
+  // 「逃げる」失敗時
+  SetMessage("あなたは逃げ出した", "しかし回り込まれた！");
+
+}
+
+// 経験値加算
+function AddExp(val){
+  gEx += val;                               // 経験値加算
+  while(gLv * (gLv + 1) * 2 <= gEx){        // レベルアップ条件を満たしている場合は
+    gLv++;                                  // レベルアップ
+    gMHP += 4 + Math.floor(Math.random() * 3);  // 最大HP上昇4〜6
+  }
+}
+
+// 敵出現処理
+function AppearEnemy(t){
+  gPhase = 1;                               // 敵出現フェーズ
+  gEnemyType = t;
+  SetMessage("敵が現れた！", null);
+}
+
+// 戦闘コマンド
+function CommandFight(){
+	gPhase = 2;					//	戦闘コマンド選択フェーズ
+	gCursor = 0;
+	SetMessage( "　戦う", "　逃げる" );
+}
+
+
 // 戦闘画面描画処理
 function DrawFight(g){
   g.fillStyle = "#000000";                  // 背景色
   g.fillRect(0, 0, WIDTH, HEIGHT);          // 画面全体を矩形描画
-  let w = gImgMonster.width / 4;
-  let h = gImgMonster.height;
-  g.drawImage(gImgMonster, gEnemyType * w, 0, w, h, Math.floor(WIDTH / 2 - w / 2), Math.floor(HEIGHT / 2 - h / 2), w, h);
-
+  if (gPhase <= 5){                         // 敵が生存している場合
+  if (IsBoss()){                            // 魔王の場合
+    g.drawImage(gImgBoss, WIDTH / 2 - gImgBoss.width / 2, HEIGHT / 2 - gImgBoss.height / 2);
+  }else{
+    let w = gImgMonster.width / 4;
+    let h = gImgMonster.height;
+    g.drawImage(gImgMonster, gEnemyType * w, 0, w, h, Math.floor(WIDTH / 2 - w / 2), Math.floor(HEIGHT / 2 - h / 2), w, h);
+  }
+  }
   DrawStatus(g);                      // ステータス描画
   DrawMessage(g);                     // メッセージ描画
 
@@ -137,13 +197,13 @@ function DrawField(g) {
 function DrawMain() {
   const g = gScreen.getContext("2d");       // 仮想画面の2D描画コンテキストを取得
 
-  if (gPhase == 0){
+  if (gPhase <= 1){
     DrawField(g);                           // フィールド描画
   }else{
     DrawFight(g);
   }
 
-/*
+/*//デバッグウィンドウ
   g.fillStyle = WNDSTYLE;             // ウィンドウの色
   g.fillRect(20, 3, 105, 15);         // 矩形描画
 
@@ -156,7 +216,7 @@ function DrawMain() {
 // メッセージ描画
 function DrawMessage(g) {
 
-  if (!gMessage1) {                     // メッセージ内容が存在しない場合
+  if (!gMessage1) {                   // メッセージ内容が存在しない場合
     return;
   }
 
@@ -189,7 +249,12 @@ function DrawTile(g, x, y, idx) {
   g.drawImage(gImgMap, ix, iy, TILESIZE, TILESIZE, x, y, TILESIZE, TILESIZE);
 }
 
+function IsBoss(){
+  return(gEnemyType == gMonsterName.length - 1);
+}
+
 function LoadImage() {
+  gImgBoss = new Image(); gImgBoss.src = gFileBoss;          // 魔王画像読み込み
   gImgMap = new Image(); gImgMap.src = gFileMap;             // マップ画像読み込み
   gImgMonster = new Image(); gImgMonster.src = gFileMonster; // モンスター画像読み込み
   gImgPlayer = new Image(); gImgPlayer.src = gFilePlayer;    // プレイヤー画像読み込み
@@ -235,12 +300,15 @@ function TickField() {
 
   if (Math.abs(gMoveX) + Math.abs(gMoveY) == SCROLL) { // マス目移動が終わる直前
     if (m == 8 || m == 9){  // お城
+      gHP = gMHP;                                     // HP全回復
       SetMessage("魔王を倒して！", null);
     }
     if (m == 10 || m == 11){  // 街
+      gHP = gMHP;                                     // HP全回復
       SetMessage("東の果てにも", "村があります");
     }
     if (m == 12){  // 村
+      gHP = gMHP;                                     // HP全回復
       SetMessage("カギは、", "洞窟にあります");
     }
     if (m == 13){  // 洞窟
@@ -256,13 +324,11 @@ function TickField() {
       }
     }
     if (m == 15){  // 魔王
-      SetMessage("魔王を倒し", "世界に平和が訪れた");
+      AppearEnemy(gMonsterName.length - 1);
     }
 
     if (Math.random() * 4 < gEncounter[m]){ // ランダムエンカウント
-      gPhase = 1;                           // 敵出現フェーズ
-      gEnemyType = 0;
-      SetMessage("敵が現れた！", null);
+      AppearEnemy(0);
     }
   }
 
@@ -324,31 +390,61 @@ function WmTimer() {
 // キー入力(DOWN)イベント
 window.onkeydown = function(ev)
 {
-  let c = ev.keyCode; // キーコード取得
+  let c = ev.keyCode;             // キーコード取得
 
-  if (gKey[c] !=0) {  // 既に押下中の場合（キーリピート）
+  if (gKey[c] !=0) {              // 既に押下中の場合（キーリピート）
     return;
   }
   gKey[c]  = 1;
 
-  if (gPhase == 1){   // 敵が現れた場合
-    gPhase = 2;       // 戦闘コマンド選択フェーズ
-    SetMessage("　戦う","　逃げる");
+  if (gPhase == 1){               // 敵が現れた場合
+    CommandFight();               // 戦闘コマンド
     return;
   }
 
-  if (gPhase == 2){   // 戦闘コマンド選択中の場合
-      if (c == 13 || c == 90){  // Enterキー、又はZキーの場合
-        this.SetMessage("敵を殺した！", null);
-        gPhase = 3;       // マップ移動フェーズ
+  if (gPhase == 2){               // 戦闘コマンド選択中の場合
+      if (c == 13 || c == 90){    // Enterキー、又はZキーの場合
+        Action();                 // 戦闘行動処理
     }else{
-      gCursor = 1 - gCursor;  // カーソル移動
+      gCursor = 1 - gCursor;      // カーソル移動
     }
     return;
   }
 
   if (gPhase == 3){
-    gPhase = 0; // マップ移動フェーズ
+    Action();                     // 戦闘行動処理
+    return;
+  }
+
+  if (gPhase == 4){
+    CommandFight();               // 戦闘コマンド
+    return;
+  }
+
+  if (gPhase == 5){
+    gPhase = 6;
+    AddExp(gEnemyType + 1); // 経験値加算
+    SetMessage("敵をやっつけた！", null);
+    return;
+  }
+
+  if (gPhase == 6){
+    if( IsBoss() && gCursor == 0 ){		//	敵が魔王で、かつ「戦う」選択時
+			SetMessage( "魔王を倒し", "世界に平和が訪れた" );
+			return;
+		}
+    gPhase = 0;                   // マップ移動フェーズ
+  }
+
+  if (gPhase == 7){
+    gPhase = 8;
+    SetMessage("あなたは死亡した", null);
+    return;
+  }
+
+  if (gPhase == 8){
+    SetMessage("ゲームオーバー", null);
+    return;
   }
 
   gMessage1 = null;
@@ -363,12 +459,11 @@ window.onkeyup = function(ev)
 // ブラウザ起動イベント
 window.onload = function () {
   LoadImage();
-  gImgMap = new Image();
-  gImgMap.src = "img/map.png"; // マップ画像読み込み
+
   gScreen = document.createElement("canvas"); // 仮想画面を作成
-  gScreen.width = WIDTH; // 仮想画面の幅を設定
-  gScreen.height = HEIGHT; // 仮想画面の高さを設定
-  WmSize(); // 画面サイズ初期化
+  gScreen.width = WIDTH;                      // 仮想画面の幅を設定
+  gScreen.height = HEIGHT;                    // 仮想画面の高さを設定
+  WmSize();                                   // 画面サイズ初期化
   window.addEventListener("resize", function () {
     WmSize();
   }); // ブラウザサイズ変更時、WmSize()が呼ばれるよう指示
