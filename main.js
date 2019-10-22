@@ -28,6 +28,8 @@ let gEx = 0;                        // プレイヤーの経験値
 let gHP = START_HP;                 // プレイヤーのHP
 let gMHP = START_HP;                // プレイヤーの最大HP
 let gLv = 1;                        // プレイヤーのレベル
+let gCursor = 0;                    // カーソルの位置
+let gEnemyType;                     // 敵種別
 let gFrame = 0;                     // 内部カウンタ
 let gHeight;                        // 実画面の高さ
 let gWidth;                         // 実画面の幅
@@ -36,15 +38,19 @@ let gMessage2 = null;               // 表示メッセージ2
 let gMoveX = 0;                     // 移動量X
 let gMoveY = 0;                     // 移動量Y
 let gImgMap;                        // マップの画像
+let gImgMonster;                        // モンスターの画像
 let gImgPlayer;                     // プレイヤーの画像
 let gItem = 0;                      // 所持アイテム
+let gPhase = 0;                         // 戦闘フェーズ
 let gPlayerX = START_X * TILESIZE + TILESIZE / 2;  // プレイヤー座標X
 let gPlayerY = START_Y * TILESIZE + TILESIZE / 2;  // プレイヤー座標Y
 let gScreen;                        // 仮想画面
 
 const gFileMap = "img/map.png";
+const gFileMonster = "img/monster.png";
 const gFilePlayer = "img/player.png";
 
+const gEncounter = [0, 0, 0, 1, 0, 0, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0,]; // 敵エンカウント確率
 
 // マップ
 const	gMap = [
@@ -82,9 +88,24 @@ const	gMap = [
  7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 7, 7, 7, 7, 7,
 ];
 
-function DrawMain() {
-  const g = gScreen.getContext("2d"); // 仮想画面の2D描画コンテキストを取得
+// 戦闘画面描画処理
+function DrawFight(g){
+  g.fillStyle = "#000000";                  // 背景色
+  g.fillRect(0, 0, WIDTH, HEIGHT);          // 画面全体を矩形描画
+  let w = gImgMonster.width / 4;
+  let h = gImgMonster.height;
+  g.drawImage(gImgMonster, gEnemyType * w, 0, w, h, Math.floor(WIDTH / 2 - w / 2), Math.floor(HEIGHT / 2 - h / 2), w, h);
 
+  DrawStatus(g);                      // ステータス描画
+  DrawMessage(g);                     // メッセージ描画
+
+  if (gPhase == 2) {                  // 戦闘フェーズがコマンド選択中の場合
+  g.fillText("→", 6, 96 + 14 * gCursor);   // カーソル描画
+  }
+}
+
+// フィールド描画処理
+function DrawField(g) {
   let mx = Math.floor(gPlayerX / TILESIZE); // プレイヤーのタイル座標X
   let my = Math.floor(gPlayerY / TILESIZE); // プレイヤーのタイル座標Y
 
@@ -104,11 +125,24 @@ function DrawMain() {
   // プレイヤー
   g.drawImage(gImgPlayer, (gFrame >> 4 & 1) * CHRWIDTH, gAngle * CHRHEIGHT, CHRWIDTH, CHRHEIGHT, WIDTH / 2 - CHRWIDTH / 2, HEIGHT / 2 - CHRHEIGHT + TILESIZE / 2, CHRWIDTH, CHRHEIGHT);
 
+
   // ステータスウィンドウ
   g.fillStyle = WNDSTYLE;             // ウィンドウの色
   g.fillRect(2, 2, 44, 37);           // 矩形描画
   DrawStatus(g);                      // ステータス描画
   DrawMessage(g);                     // メッセージ描画
+}
+
+
+function DrawMain() {
+  const g = gScreen.getContext("2d");       // 仮想画面の2D描画コンテキストを取得
+
+  if (gPhase == 0){
+    DrawField(g);                           // フィールド描画
+  }else{
+    DrawFight(g);
+  }
+
 /*
   g.fillStyle = WNDSTYLE;             // ウィンドウの色
   g.fillRect(20, 3, 105, 15);         // 矩形描画
@@ -156,8 +190,9 @@ function DrawTile(g, x, y, idx) {
 }
 
 function LoadImage() {
-  gImgMap = new Image(); gImgMap.src = gFileMap; // マップ画像読み込み
-  gImgPlayer = new Image(); gImgPlayer.src = gFilePlayer; // プレイヤー画像読み込み
+  gImgMap = new Image(); gImgMap.src = gFileMap;             // マップ画像読み込み
+  gImgMonster = new Image(); gImgMonster.src = gFileMonster; // モンスター画像読み込み
+  gImgPlayer = new Image(); gImgPlayer.src = gFilePlayer;    // プレイヤー画像読み込み
 }
 
 //function SetMessage(v1, v2 = null) // IE対応
@@ -224,7 +259,9 @@ function TickField() {
       SetMessage("魔王を倒し", "世界に平和が訪れた");
     }
 
-    if (Math.random() * 4 < 1){ // ランダムエンカウント
+    if (Math.random() * 4 < gEncounter[m]){ // ランダムエンカウント
+      gPhase = 1;                           // 敵出現フェーズ
+      gEnemyType = 0;
       SetMessage("敵が現れた！", null);
     }
   }
@@ -293,6 +330,26 @@ window.onkeydown = function(ev)
     return;
   }
   gKey[c]  = 1;
+
+  if (gPhase == 1){   // 敵が現れた場合
+    gPhase = 2;       // 戦闘コマンド選択フェーズ
+    SetMessage("　戦う","　逃げる");
+    return;
+  }
+
+  if (gPhase == 2){   // 戦闘コマンド選択中の場合
+      if (c == 13 || c == 90){  // Enterキー、又はZキーの場合
+        this.SetMessage("敵を殺した！", null);
+        gPhase = 3;       // マップ移動フェーズ
+    }else{
+      gCursor = 1 - gCursor;  // カーソル移動
+    }
+    return;
+  }
+
+  if (gPhase == 3){
+    gPhase = 0; // マップ移動フェーズ
+  }
 
   gMessage1 = null;
 
